@@ -54,12 +54,12 @@ def init_db():
             ("Maths", 14.0),
             ("Physics", 12.0),
             ("Info", 6.0),
-            ("SI", 4.0)
+            ("French", 4.0),            
+            ("SI", 4.0),
             ("Chemistry", 2.0),
             ("TIPE", 1.0),
-            ("French", 4.0),
-            ("English", 0.3),
-            ("Trad", 0.5)
+            ("Trad", 0.5),
+            ("English", 0.3)            
         ]
         cursor.executemany("INSERT INTO topics (name, min_hours) VALUES (?, ?)", default_topics)
         
