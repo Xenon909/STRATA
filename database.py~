@@ -1,0 +1,101 @@
+import sqlite3
+from datetime import datetime
+import os
+
+DB_FILE = 'strata_data.db'
+
+def get_connection():
+    """Establishes and returns a connection to the SQLite database."""
+    return sqlite3.connect(DB_FILE)
+
+def init_db():
+    """Initializes the database schema and seeds default structure."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Create topics table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            min_hours REAL NOT NULL
+        )
+    """)
+    
+    # Create sessions table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic_id INTEGER,
+            start_time TIMESTAMP,
+            end_time TIMESTAMP,
+            duration_minutes REAL,
+            FOREIGN KEY(topic_id) REFERENCES topics(id)
+        )
+    """)
+    
+    # Seed default topics if none exist to establish baseline
+    cursor.execute("SELECT COUNT(*) FROM topics")
+    if cursor.fetchone()[0] == 0:
+        default_topics = [
+            ("Mathematics (MP)", 14.0),
+            ("Physics", 12.0),
+            ("Computer Science (OCaml)", 6.0),
+            ("Engineering Sciences", 4.0)
+        ]
+        cursor.executemany("INSERT INTO topics (name, min_hours) VALUES (?, ?)", default_topics)
+        
+    conn.commit()
+    conn.close()
+
+def get_topics():
+    """Returns a list of all topics."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, min_hours FROM topics")
+    topics = cursor.fetchall()
+    conn.close()
+    return topics
+
+def log_session(topic_name, start_time, end_time):
+    """Logs a study session and calculates duration."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM topics WHERE name = ?", (topic_name,))
+    result = cursor.fetchone()
+    
+    if not result:
+        conn.close()
+        raise ValueError(f"Topic '{topic_name}' not found in the tracking grid.")
+        
+    topic_id = result[0]
+    duration_minutes = (end_time - start_time).total_seconds() / 60.0
+    
+    cursor.execute("""
+        INSERT INTO sessions (topic_id, start_time, end_time, duration_minutes)
+        VALUES (?, ?, ?, ?)
+    """, (topic_id, start_time, end_time, duration_minutes))
+    
+    conn.commit()
+    conn.close()
+    return duration_minutes
+
+def get_progress():
+    """Aggregates logged hours against minimum threshold parameters for the visualizer."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT t.name, t.min_hours, COALESCE(SUM(s.duration_minutes) / 60.0, 0) as logged_hours
+        FROM topics t
+        LEFT JOIN sessions s ON t.id = s.topic_id
+        GROUP BY t.id
+    """)
+    
+    progress = cursor.fetchall()
+    conn.close()
+    return progress
+
+if __name__ == "__main__":
+    init_db()
