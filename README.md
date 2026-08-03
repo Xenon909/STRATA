@@ -24,7 +24,7 @@ On Debian / Ubuntu:
 ```bash
 sudo apt update
 sudo apt install python3 python3-matplotlib sqlite3
-``
+```
 
 ### 2. Architecture & Method of Usage
 
