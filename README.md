@@ -39,7 +39,6 @@ STRATA operates through a clear command prompt (STRATA> ) separated into five co
 [4] AFK Session Sync
 [0] Exit System
 
-
 #### [1] Live Focus Session
 
     Select your target study module (e.g., Maths, Physics).
