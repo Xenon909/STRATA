@@ -1,0 +1,169 @@
+import sys
+from datetime import datetime, timedelta
+import database as db
+import visualizer
+
+# Custom Command Prompt Prefix
+PROMPT = "STRATA> "
+
+def print_header(title):
+    print("\n" + "=" * 45)
+    print(f" S.T.R.A.T.A. :: {title}")
+    print("=" * 45)
+
+def select_topic():
+    """Helper function to cleanly list and select a topic from the database."""
+    topics = db.get_topics()
+    if not topics:
+        print("[!] No topics available. Please configure your Time Budget first.")
+        return None
+    
+    print("\nAvailable Topics:")
+    for idx, (t_id, name, min_hours) in enumerate(topics):
+        print(f"[{idx+1}] {name} (Min Req: {min_hours}h)")
+    
+    while True:
+        choice = input(f"\nSelect Topic ID (or 0 to cancel)\n{PROMPT}").strip()
+        if choice == '0':
+            return None
+        try:
+            choice_idx = int(choice) - 1
+            if 0 <= choice_idx < len(topics):
+                return topics[choice_idx][1]  # Return the string name of the topic
+            print("[!] Invalid selection.")
+        except ValueError:
+            print("[!] Please enter a valid numerical ID.")
+
+def handle_live_session():
+    """Starts a live focus timer that strictly blocks out all other application features."""
+    print_header("LIVE FOCUS SESSION")
+    topic = select_topic()
+    if not topic:
+        return
+    
+    start_time = datetime.now()
+    print(f"\n[ACTIVE] Session locked for '{topic}'.")
+    print(f"[ACTIVE] Start time: {start_time.strftime('%H:%M:%S')}")
+    print(">> Type exactly 'END' (case-sensitive) to stop the timer and log the session. <<\n")
+    
+    while True:
+        cmd = input(PROMPT)
+        if cmd == "END":
+            end_time = datetime.now()
+            break
+        else:
+            print("[!] Command ignored. Focus mode active. Type 'END' to terminate.")
+    
+    db.log_session(topic, start_time, end_time)
+    duration = (end_time - start_time).total_seconds() / 60
+    print(f"[SUCCESS] Logged {duration:.1f} minutes for '{topic}'.")
+
+def handle_afk_session():
+    """Logs an asynchronous session using minimal input to synthesize exact timestamps."""
+    print_header("AFK SESSION SYNC")
+    topic = select_topic()
+    if not topic:
+        return
+        
+    # 1. Date Input & Parsing
+    date_str = input(f"\nDate [Leave blank for Today, type 'yesterday', or YYYY-MM-DD]\n{PROMPT}").strip().lower()
+    if date_str == '' or date_str == 'today':
+        target_date = datetime.now().date()
+    elif date_str == 'yesterday':
+        target_date = (datetime.now() - timedelta(days=1)).date()
+    else:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            print("[!] Invalid date format. Aborting to avoid database corruption.")
+            return
+            
+    # 2. Start Time Input & Parsing
+    time_str = input(f"\nStart Time (24h format, e.g., 14:30)\n{PROMPT}").strip()
+    try:
+        target_time = datetime.strptime(time_str, "%H:%M").time()
+    except ValueError:
+        print("[!] Invalid time format. Aborting.")
+        return
+        
+    # 3. Duration Input
+    duration_str = input(f"\nDuration (in precise minutes)\n{PROMPT}").strip()
+    try:
+        duration_mins = int(duration_str)
+    except ValueError:
+        print("[!] Duration must be an integer. Aborting.")
+        return
+        
+    # Synthesize Timestamps
+    start_time = datetime.combine(target_date, target_time)
+    end_time = start_time + timedelta(minutes=duration_mins)
+    
+    db.log_session(topic, start_time, end_time)
+    print(f"\n[SUCCESS] AFK Sync Complete: '{topic}' logged on {start_time.strftime('%Y-%m-%d')} for {duration_mins}m.")
+
+def handle_time_budget():
+    """Allows adjustments to global caps and specific topic minimums."""
+    print_header("TIME BUDGET MANAGER")
+    print("[1] Modify Global Weekly Cap")
+    print("[2] Modify Topic Danger Zone (Min Required Hours)")
+    print("[0] Return to Nexus")
+    
+    choice = input(f"\n{PROMPT}").strip()
+    
+    if choice == '1':
+        new_cap = input(f"Enter new global cap in hours (e.g., 40.5)\n{PROMPT}").strip()
+        try:
+            db.update_global_cap(float(new_cap))
+            print("[SUCCESS] Global weekly cap updated.")
+        except ValueError:
+            print("[!] Invalid number format.")
+    elif choice == '2':
+        topic = select_topic()
+        if topic:
+            new_min = input(f"Enter new minimum weekly hours for '{topic}'\n{PROMPT}").strip()
+            try:
+                # Assuming database.py handles the constraint math and raises an Exception if cap is exceeded
+                db.update_topic_minimum(topic, float(new_min))
+                print(f"[SUCCESS] Danger Zone for '{topic}' updated.")
+            except Exception as e:
+                print(f"[!] Validation Error: {e}")
+    elif choice == '0':
+        return
+    else:
+        print("[!] Unrecognized command.")
+
+def main_loop():
+    """Core execution loop for the S.T.R.A.T.A. CLI."""
+    db.init_db()
+    
+    while True:
+        print_header("COMMAND NEXUS")
+        print("[1] Live Focus Session")
+        print("[2] View Operational Grid")
+        print("[3] Manage Time Budget")
+        print("[4] AFK Session Sync")
+        print("[0] Exit System")
+        
+        choice = input(f"\n{PROMPT}").strip()
+        
+        if choice == '1':
+            handle_live_session()
+        elif choice == '2':
+            print("\n[S.T.R.A.T.A.] Launching Visualizer Canvas...")
+            visualizer.render_radar_chart()
+        elif choice == '3':
+            handle_time_budget()
+        elif choice == '4':
+            handle_afk_session()
+        elif choice == '0':
+            print("\n[S.T.R.A.T.A.] Terminating system. Goodbye.")
+            sys.exit(0)
+        else:
+            print("[!] Unrecognized command. Please enter a valid numerical ID.")
+
+if __name__ == "__main__":
+    try:
+        main_loop()
+    except KeyboardInterrupt:
+        print("\n\n[!] System interrupt detected. Safely terminating S.T.R.A.T.A...")
+        sys.exit(0)

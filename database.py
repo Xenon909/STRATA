@@ -56,7 +56,7 @@ def init_db():
             ("Info", 6.0),
             ("French", 4.0),            
             ("SI", 4.0),
-            ("Chemistry", 2.0),
+            ("Chemistry", 12.0),
             ("TIPE", 1.0),
             ("Trad", 0.5),
             ("English", 0.3)            
