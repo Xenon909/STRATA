@@ -1,40 +1,18 @@
 # STRATA
-S.T.R.A.T.A: System for Tracking, Reporting, and Analytical Tactical Assessment.
+> S.T.R.A.T.A: System for Tracking, Reporting, and Analytical Tactical Assessment.
+> A terminal-based study tracker and time-budgeting tool.
 
-strata/
-│
-├── main.py            # Entry point; handles the interactive CLI loop, menu, and user commands.
-├── database.py        # Handles SQLite connection, schema initialization, and data queries.
-├── visualizer.py      # Manages NumPy calculations and Matplotlib radar│ chart rendering.
-├── requirements.txt   # Lists project dependencies (matplotlib, numpy).
-├── README.md          # Project documentation and usage instructions.
-└── seed _ test _ data.py
+## Overview
 
-# S.T.R.A.T.A.
+STRATA was originally engineered to manage the rigorous, high-volume academic study blocks required for CPGE (MPSI / MP) coursework. However, its core architecture makes it a versatile, **all-purpose study tracker** for anyone needing strict time-budgeting and topic progression tracking.
 
-### 🚀 S.T.R.A.T.A. Development Log
+At its core, STRATA monitors your weekly progress by topic using an integrated **radar chart visualizer**, allowing you to instantly gauge whether your time distribution aligns with your academic goals.
 
-#### 📌 Current Status: Phase 1 Complete (Database & Visualizer Engine)
+## Key Features
 
----
+*   **Radar Chart Visualizer:** Track weekly progress across multiple subjects visually directly in the terminal, ensuring balanced time allocation.
+*   **Global Weekly Time-Cap:** A built-in safety mechanism that enforces study boundaries to prevent burnout and strictly limit over-exertion.
+*   **Preset Management System:** Seamlessly swap between different academic schedules, intensive sprint focuses, or term modules.
+*   **Local & Lightweight:** Powered by a native Python backend and an SQLite database for fast, persistent session logging.
+*   **TUI Optimized:** Designed for a terminal workflow, specifically tailored for seamless integration alongside Emacs.
 
-#### 🛠️ Completed Modules
-* **`database.py`**
-  * Established SQLite backend with schema support for `topics`, `sessions`, and `settings`.
-  * Configured `max_weekly_hours` global weekly cap parameter.
-  * Implemented mathematical boundary validation inside `update_topic_minimum()` to prevent user allocations from exceeding the global cap.
-  * Configured query aggregators (`get_progress()`, `get_topics()`, `log_session()`) for visualizer integration.
-
-* **`visualizer.py`**
-  * Created an interactive Matplotlib radar visualizer styled in a dark cyberpunk theme (`#121212`).
-  * Plotted the minimum required hours polygon ("Danger Zone") against actual logged study hours ("Actual Progress").
-  * Centered layout explicitly and pinned a live `GLOBAL WEEKLY CAP` text label to the bottom of the canvas.
-  * Fixed GUI event loop blocking to ensure native window toolbar responsiveness (zoom, pan, save) without desktop environment freezing.
-
-* **`seed_test_data.py`**
-  * Built a seed script to generate randomized study sessions across all database topics to verify visualizer polygon overlays.
-
----
-
-#### 🎯 Next Immediate Action Item
-* **Build `main.py`**: Implement the main terminal loop featuring the interactive **"Time Budget"** configuration menu, session logger interface, and visualizer popup trigger.
