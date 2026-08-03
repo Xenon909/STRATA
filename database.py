@@ -42,26 +42,55 @@ def init_db():
         )
     """)
     
+    # Create presets table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS presets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
+        )
+    """)
+    
+    # Create preset_allocations table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS preset_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            preset_id INTEGER,
+            topic_name TEXT,
+            min_hours REAL,
+            FOREIGN KEY(preset_id) REFERENCES presets(id)
+        )
+    """)
+    
     # Seed default maximum weekly hours if not set (baseline 40 hours)
     cursor.execute("SELECT COUNT(*) FROM settings WHERE key = 'max_weekly_hours'")
     if cursor.fetchone()[0] == 0:
         cursor.execute("INSERT INTO settings (key, value) VALUES ('max_weekly_hours', 40.0)")
 
+    # Baseline 40.0 hour distribution for a "Normal Prepa Week"
+    default_topics = [
+        ("Maths", 12.0),
+        ("Physics", 10.0),
+        ("Info", 4.0),
+        ("SI", 4.0),
+        ("Chemistry", 4.0),
+        ("French", 2.0),
+        ("English", 2.0),
+        ("TIPE", 2.0),
+        ("Trad", 0.0)
+    ]
+
     # Seed default topics if none exist to establish baseline
     cursor.execute("SELECT COUNT(*) FROM topics")
     if cursor.fetchone()[0] == 0:
-        default_topics = [
-            ("Maths", 14.0),
-            ("Physics", 12.0),
-            ("Info", 6.0),
-            ("French", 4.0),            
-            ("SI", 4.0),
-            ("Chemistry", 12.0),
-            ("TIPE", 1.0),
-            ("Trad", 0.5),
-            ("English", 0.3)            
-        ]
         cursor.executemany("INSERT INTO topics (name, min_hours) VALUES (?, ?)", default_topics)
+
+    # Seed the default preset if no presets exist
+    cursor.execute("SELECT COUNT(*) FROM presets")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO presets (name) VALUES ('Normal Prepa Week')")
+        preset_id = cursor.lastrowid
+        preset_data = [(preset_id, name, min_h) for name, min_h in default_topics]
+        cursor.executemany("INSERT INTO preset_allocations (preset_id, topic_name, min_hours) VALUES (?, ?, ?)", preset_data)
         
     conn.commit()
     conn.close()
@@ -101,31 +130,30 @@ def get_topics():
     conn.close()
     return topics
 
-def update_topic_minimum(topic_id, new_hours):
-    """Updates the minimum hours for a specific topic, enforcing the global cap limit."""
+def update_topic_minimum(topic_name, new_hours):
+    """Updates the minimum hours for a specific topic, intelligently enforcing cap logic."""
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Get current hours for this specific topic
-    cursor.execute("SELECT min_hours FROM topics WHERE id = ?", (topic_id,))
+    cursor.execute("SELECT min_hours FROM topics WHERE name = ?", (topic_name,))
     result = cursor.fetchone()
     if not result:
         conn.close()
-        raise ValueError("Topic not found.")
+        raise ValueError(f"Topic '{topic_name}' not found.")
         
     current_topic_hours = result[0]
     
-    # Calculate new total against the cap
     total_allocated = get_total_allocated_hours()
     global_cap = get_global_cap()
     
     projected_total = (total_allocated - current_topic_hours) + new_hours
     
-    if projected_total > global_cap:
+    # Catch-22 Fix: Only block the update if they exceed the cap AND are trying to increase the hours
+    if projected_total > global_cap and new_hours > current_topic_hours:
         conn.close()
-        raise ValueError(f"Update rejected: Exceeds weekly cap of {global_cap} hours by {projected_total - global_cap} hours.")
+        raise ValueError(f"Update rejected: Exceeds weekly cap of {global_cap} hours by {projected_total - global_cap:.1f} hours.")
         
-    cursor.execute("UPDATE topics SET min_hours = ? WHERE id = ?", (new_hours, topic_id))
+    cursor.execute("UPDATE topics SET min_hours = ? WHERE name = ?", (new_hours, topic_name))
     conn.commit()
     conn.close()
 
@@ -168,6 +196,83 @@ def get_progress():
     progress = cursor.fetchall()
     conn.close()
     return progress
+
+# ==========================================
+# PRESET MANAGEMENT FUNCTIONS
+# ==========================================
+
+def get_presets():
+    """Fetches all saved configuration presets."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM presets ORDER BY id ASC")
+    presets = cursor.fetchall()
+    conn.close()
+    return presets
+
+def apply_preset(preset_id):
+    """Overwrites current live grid with a preset's allocations."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Calculate the total hours of the requested preset
+    cursor.execute("SELECT COALESCE(SUM(min_hours), 0) FROM preset_allocations WHERE preset_id = ?", (preset_id,))
+    preset_total = cursor.fetchone()[0]
+    global_cap = get_global_cap()
+    
+    if preset_total > global_cap:
+        conn.close()
+        raise ValueError(f"Cannot apply preset: Total hours ({preset_total:.1f}h) mathematically exceeds your current Global Cap ({global_cap:.1f}h).")
+        
+    # Apply to topics
+    cursor.execute("SELECT topic_name, min_hours FROM preset_allocations WHERE preset_id = ?", (preset_id,))
+    allocations = cursor.fetchall()
+    
+    for topic_name, min_hours in allocations:
+        cursor.execute("UPDATE topics SET min_hours = ? WHERE name = ?", (min_hours, topic_name))
+        
+    conn.commit()
+    conn.close()
+
+def save_new_preset(preset_name):
+    """Takes a snapshot of current allocations and saves them as a new preset."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("INSERT INTO presets (name) VALUES (?)", (preset_name,))
+        preset_id = cursor.lastrowid
+        
+        cursor.execute("SELECT name, min_hours FROM topics")
+        current_topics = cursor.fetchall()
+        
+        allocations = [(preset_id, t[0], t[1]) for t in current_topics]
+        cursor.executemany("INSERT INTO preset_allocations (preset_id, topic_name, min_hours) VALUES (?, ?, ?)", allocations)
+        
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise ValueError(f"Preset name '{preset_name}' already exists.")
+        
+    conn.close()
+
+def overwrite_preset(preset_id):
+    """Deletes old preset allocations and overwrites them with a fresh snapshot of the current grid."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Clear out old allocations
+    cursor.execute("DELETE FROM preset_allocations WHERE preset_id = ?", (preset_id,))
+    
+    # Capture fresh snapshot
+    cursor.execute("SELECT name, min_hours FROM topics")
+    current_topics = cursor.fetchall()
+    
+    allocations = [(preset_id, t[0], t[1]) for t in current_topics]
+    cursor.executemany("INSERT INTO preset_allocations (preset_id, topic_name, min_hours) VALUES (?, ?, ?)", allocations)
+    
+    conn.commit()
+    conn.close()
 
 if __name__ == "__main__":
     init_db()
